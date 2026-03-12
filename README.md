@@ -1,232 +1,39 @@
-# mo00onfox.github.io
+# Seedream 3.0 → 4.0: Technical Comparison & NeurIPS Abstract
 
+## Refined Technical Comparison Table
 
-# NotebookLM Prompt: Seedream 3.0 vs. 4.0 — A NeurIPS/CVPR/ICML Researcher Perspective
-
----
-
-## SYSTEM CONTEXT FOR NOTEBOOKLM
-
-You are an expert machine learning researcher with deep expertise in **diffusion models, generative modeling, and computer vision**, with publication experience at NeurIPS, CVPR, and ICML. Your role is to critically compare **Seedream 3.0** and **Seedream 4.0** (ByteDance Seed), identifying the precise mathematical, architectural, and algorithmic advances from 3.0 to 4.0. Your analysis must be technically rigorous, using the formalism expected in top-tier ML venues.
-
----
-
-## SOURCES TO LOAD INTO NOTEBOOKLM
-
-Upload both documents:
-1. `Seedream_3_0_Technical_Report.md`
-2. `Seedream_4_0__Toward_Next-generation_Multimodal_Image_Generation.md`
-
----
-
-## PRIMARY PROMPT
-
-> **"Conduct a deep technical comparison of Seedream 3.0 and Seedream 4.0, explaining every advancement of 4.0 over 3.0 with mathematical rigor at the level of a NeurIPS/CVPR/ICML paper reviewer. Cover architecture, training objectives, data pipeline, post-training, inference acceleration, and benchmark methodology. Where formulas appear in the reports, derive their implications. Where they are implied but not stated, formalize them."**
-
----
-
-## STRUCTURED SUB-PROMPTS (run these in sequence)
+| Dimension                   | Seedream 3.0                                                                                              | Seedream 4.0                                                                                                                    | Key Advance                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Backbone**                | MM-DiT (joint text-image attention, fixed-architecture)                                                   | Scalable DiT with structured block-sparse attention and 3D RoPE                                                                 | Architecture complexity decoupled from task count; $O(n^2) \to O(n_\text{out}^2 + n_\text{out} n_\text{ref})$     |
+| **VAE**                     | 16-ch, $f=8$ (spatial compression); standard reconstruction loss                                          | High-compression-ratio VAE (increased $f$ or adaptive spatial pooling); fewer latent tokens per image                           | Sequence length $n \propto 1/f^2$; faster attention at fixed quality                                              |
+| **Training Objective**      | Flow matching $\mathcal{L}_\text{FM}$ + REPA (representation alignment, $\lambda{=}0.5$, DINOv2-L target) | $\mathcal{L}_\text{FM}$ + adversarial distillation ($\mathcal{L}_\text{adv}$); REPA replaced by adversarial feature supervision | Distillation internalizes multi-step trajectory; single-pass quality without score accumulation                   |
+| **Time Sampling**           | Logit-normal $t \sim \sigma(\mathcal{N}(\mu_t, \sigma_t^2))$ + importance weighting                       | Adaptive Denoising Paradigm (ADP) → Adaptive Denoising Model (ADM); non-uniform $t$-budget per denoising stage                  | Compute concentrated at high-uncertainty timesteps; NFE reduced $\sim$20 → 4–8                                    |
+| **Data Strategy**           | Defect-aware filtering + dual-axis TF-IDF concept balancing; bilingual corpus                             | Knowledge-centric curation: difficulty-rated sub-pipeline for formula/chart/diagram/UI; VLM-recaptioned at scale                | Covers knowledge-dense visual domains systematically excluded from aesthetic filtering                            |
+| **Post-training Scope**     | T2I only: CT → SFT → RLHF → PE (four sequential stages)                                                   | Joint T2I + editing + multi-image: same CT→SFT→RLHF→PE stages applied over $\mathcal{T}$                                        | Multi-task reward prevents task forgetting; unified RLHF over $p(\mathbf{y}_{1:M}\|\mathbf{x}_{1:N}, \mathbf{c})$ |
+| **Reward Model**            | VLM-as-judge, scaled 1B → >20B parameters (GenRM); aesthetic + alignment scores                           | Continued VLM reward scaling + task-consistency reward $R_\text{consist}$; physical-plausibility judge                          | Scaling law for reward quality confirmed; consistency reward formalizes $N{>}0$ tasks                             |
+| **PE Module**               | Rule-based prompt expansion heuristics                                                                    | End-to-end VLM (Seed1.5-VL) with AdaCoT: adaptive chain-of-thought budget $B(\mathbf{c}) \propto \text{complexity}(\mathbf{c})$ | Semantic reasoning depth scales with prompt complexity; implicit constraint inference before generation           |
+| **Conditioning**            | Text via dual encoder; no visual conditioning in base model                                               | Text + $N$ reference image tokens; task embedding $\mathbf{e}_\tau$ via AdaLN; structured attention mask $\mathbf{A}$           | Task routing without parameter duplication; zero ControlNet overhead                                              |
+| **Positional Encoding**     | 2D RoPE $(r, c)$ per image                                                                                | 3D RoPE $(i_\text{img}, r, c)$; image-index axis separates reference from output tokens                                         | Multi-image sequences positionally coherent without learned index embeddings                                      |
+| **Acceleration**            | Consistent noise expectation + importance timestep sampling                                               | ADM distillation + 4/8-bit quantization (W4A8) + speculative decoding for PE VLM                                                | Hardware-software co-design; quantization applies to both DiT and VLM jointly                                     |
+| **Inference Speed**         | $\sim$3.0 s @ 1K resolution (no PE overhead)                                                              | $\sim$1.4 s @ 2K resolution (no PE overhead)                                                                                    | $\sim$16× effective efficiency gain (2× resolution, $\sim$0.47× latency)                                          |
+| **Max Resolution**          | 2K native (2048 px long edge)                                                                             | 4K native (4096 px long edge)                                                                                                   | $4\times$ pixel count at comparable latency                                                                       |
+| **Task Scope**              | T2I only ($N{=}0, M{=}1$)                                                                                 | T2I + editing + style/ID/IP + control signals + multi-image composition + storyboard ($N{\geq}0, M{\geq}1$)                     | $                                                                                                                 | \mathcal{T} | : 2 \to 10{+}$ from single $\theta$ |
+| **KV Caching**              | None                                                                                                      | Reference tokens $(\mathbf{K}^{(x)}_i, \mathbf{V}^{(x)}_i)$ cached across all $T$ denoising steps                               | $O(T \cdot n_\text{ref}) \to O(n_\text{ref})$ attention compute for fixed references                              |
+| **Evaluation Suite**        | Bench-377 + text rendering metrics; human A/B vs. SDXL/FLUX/MJ                                            | MagicBench 4.0 + DreamEval (VQA-based, GPT-4o judge); multi-task consistency metrics                                            | Richer, reproducible, task-decomposed evaluation; reduces VLM-judge circularity                                   |
+| **Catastrophic Forgetting** | N/A (single task)                                                                                         | Task embeddings + phased curriculum (T2I → T2I+edit → full $\mathcal{T}$) + task-floor sampling                                 | Gradient interference bounded by soft routing; base T2I quality preserved                                         |
 
 ---
 
-### 1. ARCHITECTURE: DiT Backbone and VAE Efficiency
+## NeurIPS Workshop Abstract
 
-**Prompt:**
+**Seedream 3.0 to 4.0: Architectural and Algorithmic Foundations of Unified Multimodal Image Generation**
 
-> Compare the core architectural evolution from Seedream 3.0 to 4.0.
->
-> For Seedream 3.0:
-> - It inherits **MMDiT** (Multimodal Diffusion Transformer), processing image and text token streams jointly through shared attention blocks.
-> - Cross-modality RoPE is introduced: text tokens treated as 2D tensors of shape `[1, L]`, with column-wise position IDs assigned *after* corresponding image patch IDs — formalize why this enforces spatial-semantic co-registration.
->
-> For Seedream 4.0:
-> - A redesigned **scalable DiT backbone** achieves >10× reduction in training/inference FLOPs over 3.0. Explain likely sources of this: linear attention approximations, sparse attention masking, reduced sequence length via high-compression VAE.
-> - A new **high-compression-ratio VAE** dramatically reduces latent token count. If Seedream 3.0 used a standard 8× spatial downsampling VAE (typical for latent diffusion), and 4.0 achieves, say, 16× or 32×, compute the theoretical sequence length reduction (and thus attention cost reduction) for a 2K image:
->   - At 8× downsample: 2048² / 64 = 65,536 tokens
->   - At 16× downsample: 2048² / 256 = 16,384 tokens (~4× reduction)
->   - Attention complexity O(n²) → 16× FLOP reduction in self-attention alone.
-> - Discuss the training-inference hardware alignment: HSDP (Hybrid Sharded Data Parallelism), FSDP, `torch.compile` + custom CUDA kernels, and global greedy sample allocation for variable-length sequences.
->
-> **Key question for NotebookLM:** What specific architectural choices in 4.0 make it simultaneously more efficient AND more capable than 3.0? What design principles (e.g., from FlashAttention, Ring Attention, or efficient ViT literature) could underlie the 10× FLOP reduction?
+We characterize the mathematical and systems-level advances that distinguish Seedream 4.0 from its predecessor, Seedream 3.0, through the lens of generative modeling theory and large-scale systems design. Seedream 3.0 defines a specialist model over $p(\mathbf{y} \mid \mathbf{c}_\text{text}; \theta_{3.0})$, optimized via flow matching with logit-normal time sampling — $t \sim \sigma(\mathcal{N}(\mu_t, \sigma_t^2))$, $\sigma = (1+e^{-u})^{-1}$ — and a representation alignment auxiliary loss $\mathcal{L}_\text{REPA} = \lambda \cdot \|f_\theta(\mathbf{z}_t) - \text{sg}[\text{DINOv2}(\mathbf{x})]\|^2$ that aligns intermediate DiT features with a frozen vision encoder. Text-to-image generation and image editing are handled by disjoint model families, precluding joint optimization and imposing combinatorial maintenance overhead as the task set grows. Seedream 4.0 replaces this fragmented paradigm with a single unified conditional distribution $p(\mathbf{y}_{1:M} \mid \mathbf{x}_{1:N}, \mathbf{c}; \theta_{4.0})$, where $\mathbf{x}_{1:N}$ are $N \geq 0$ reference images (visual controls, style exemplars, editing sources, or geometric signal maps), $\mathbf{c} = (\mathbf{c}_\text{text}, \hat{\mathbf{c}}_\text{VLM})$ is a prompt augmented by an adaptive chain-of-thought expansion with compute budget $B(\mathbf{c}) \propto \text{complexity}(\mathbf{c})$, and $\mathbf{y}_{1:M}$ are $M \geq 1$ output images. This single parameterization spans a task space $|\mathcal{T}| \geq 10$ — including text-to-image, single-image editing, multi-reference composition, storyboard generation, style/identity transfer, and native geometric control — without per-task parameter duplication.
 
----
+The architectural machinery enabling this unification is a structured extension of the Diffusion Transformer. Reference and output image latents are jointly patchified and concatenated with text tokens into a single sequence: $\mathbf{S} = [\mathbf{P}^{(x)}_{1:N};\, \mathbf{P}^{(y)}_{1:M};\, \mathbf{e}_\text{text}]$, processed by a single DiT equipped with a block-sparse attention mask $\mathbf{A}$ enforcing the constraint that reference tokens are read-only (output tokens attend to references, but references cannot attend to outputs, preventing denoising-trajectory corruption of the conditioning context). Positional encoding is extended from 2D RoPE to a factored 3D RoPE over axes $(i_\text{img}, r, c)$, enabling coherent spatial encoding across arbitrarily many images without learned index embeddings. Task identity is injected via a task embedding $\mathbf{e}_\tau$ in AdaLN at each DiT block — $\text{AdaLN}(\mathbf{h}, \mathbf{e}_\tau) = \boldsymbol{\gamma}(\mathbf{e}_\tau) \odot \frac{\mathbf{h} - \mu}{\sigma} + \boldsymbol{\beta}(\mathbf{e}_\tau)$ — providing soft task-routing that prevents catastrophic interference across tasks whose required feature extraction strategies are diametrically opposed (e.g., style transfer, which discards semantics, vs. identity preservation, which retains them). Reference token KV-states are cached across all $T$ denoising steps, reducing reference-attention cost from $O(T \cdot n_\text{ref})$ to $O(n_\text{ref})$ per layer.
 
-### 2. TRAINING OBJECTIVE: Flow Matching and REPA
+Training advances operate at three levels. At the data level, any image in the training corpus can generate training tuples for multiple tasks $\tau$ via deterministic preprocessing (Canny extraction, depth estimation, identity masking), multiplying effective data scale by $|\mathcal{T}|$ without new collection. A knowledge-centric curation sub-pipeline — difficulty-rated across formula, chart, diagram, and UI domains — systematically covers the visual knowledge space excluded by aesthetic filtering alone, a category where competing T2I systems exhibit systematic failure modes. At the objective level, the REPA auxiliary loss is replaced by adversarial distillation $\mathcal{L}_\text{adv}$, which internalizes the multi-step score trajectory into the model's single-pass output, reducing inference NFE from $\sim$20–30 (3.0) to 4–8 (4.0). The reward model in post-training is extended with a task-consistency term $R_\text{consist}(\mathbf{y}, \mathbf{x}_{1:N}) = \sum_i [\lambda_\text{DINO} \cdot \text{DINO}(\mathbf{y}, \mathbf{x}_i) + \lambda_\text{ctrl} \cdot F_1(\hat{\mathcal{E}}(\mathbf{y}), \mathcal{E}(\mathbf{x}_i))]$ and a VLM physical-plausibility judge, constituting a process reward model applied to image generation for the first time. A phased training curriculum — T2I only, then T2I + editing, then full $\mathcal{T}$, with task-floor sampling $p(\tau) \geq \epsilon$ — bounds gradient interference and preserves base generation quality.
 
-**Prompt:**
+At the inference systems level, Seedream 4.0 realizes a holistic hardware-software co-design not present in 3.0. The Adaptive Denoising Model (ADM) allocates NFE budget non-uniformly across timesteps, concentrating evaluations at high-uncertainty regions of the denoising trajectory (mid-$t$, where $\nabla_\mathbf{z} \log p_t$ has highest curvature) and coarsening steps near $t \in \{0, 1\}$ where the velocity field is approximately linear. Combined with 4/8-bit quantization (W4A8) applied jointly to the DiT backbone and the Seed1.5-VL prompt expansion module, and speculative decoding for the autoregressive VLM component, the system achieves $\sim$1.4 s per image at 2K resolution — compared to $\sim$3.0 s at 1K in 3.0 — representing an effective efficiency gain of $\sim$16× when accounting for the $4\times$ pixel-count increase. Native 4K generation becomes tractable via the high-compression-ratio VAE and block-sparse attention, whereas 3.0's architectural assumptions made 4K generation prohibitively expensive. The evaluation suite is correspondingly updated: MagicBench 4.0 and DreamEval introduce VQA-based, task-decomposed metrics with GPT-4o judging, replacing the Bench-377 and text-rendering metrics of 3.0 with a richer protocol that measures the full $|\mathcal{T}|$ task space and reduces judge-model circularity through rubric-constrained scoring.
 
-> Seedream 3.0 introduces the following training loss (from the paper):
->
-> $$\mathcal{L} = \mathbb{E}_{(\mathbf{x}_0, \mathcal{C})\sim \mathcal{D},\, t\sim p(t; \mathcal{D}),\, \mathbf{x}_t\sim p_t} \left\|\mathbf{v}_\theta (\mathbf{x}_t, t; \mathcal{C}) - \frac{d\mathbf{x}_t}{dt}\right\|_2^2 + \lambda \mathcal{L}_{\rm REPA}$$
->
-> where:
-> - The linear interpolant is **flow matching**: $\mathbf{x}_t = (1-t)\mathbf{x}_0 + t\boldsymbol{\epsilon}$, $\boldsymbol{\epsilon} \sim \mathcal{N}(0, I)$
-> - The target velocity field is $\frac{d\mathbf{x}_t}{dt} = \boldsymbol{\epsilon} - \mathbf{x}_0$ (constant along the ODE path)
-> - $\mathcal{L}_{\rm REPA}$ = cosine distance between intermediate MMDiT features and **DINOv2-L** features, with $\lambda = 0.5$
->
-> Analyze this rigorously:
-> 1. Why does REPA (Representation Alignment) accelerate convergence? Connect to the geometric intuition: aligning the DiT's internal feature manifold with DINOv2's semantically structured representation space reduces the distance the model must travel in representation space during early training.
-> 2. The resolution-aware timestep sampling: $t \sim p(t; \mathcal{D})$ is a **shifted logit-normal distribution**. For high-resolution data, the shift increases mass at low SNR (high t). Derive the SNR schedule: $\text{SNR}(t) = (1-t)^2 / t^2$. Why does high-resolution training require more emphasis on the high-t (low-SNR, low-frequency structure) regime?
-> 3. Does Seedream 4.0 retain or modify this objective? What does the shift to **adversarial distillation** in 4.0's acceleration imply about the pretraining objective remaining intact (standard flow matching) versus the inference-time trajectory being drastically modified?
-
----
-
-### 3. DATA PIPELINE: From Dual-Axis Sampling to Knowledge-Centric Curation
-
-**Prompt:**
-
-> Compare the data engineering philosophies of Seedream 3.0 and 4.0.
->
-> **Seedream 3.0:**
-> - **Defect-aware training paradigm**: A defect detector (trained on 15K annotated samples via active learning) localizes artifacts via bounding box prediction. When defect area < 20% of image, the sample is retained and a **spatial attention mask** is applied in latent space during loss computation — i.e., defect regions are excluded from gradient flow. This recovers 21.7% more training data.
->   - *Formal implication:* Modified loss becomes $\mathcal{L} = \mathbb{E}[\mathbf{m} \odot \|\mathbf{v}_\theta - \dot{\mathbf{x}}_t\|_2^2]$ where $\mathbf{m}$ is the latent-space defect mask.
-> - **Dual-axis sampling**: Joint optimization over (1) visual morphology clusters (hierarchical clustering), and (2) semantic TF-IDF distribution to correct long-tail textual semantics.
->
-> **Seedream 4.0:**
-> - Identifies two failure modes of top-down resampling: (a) over-representation of natural images, (b) under-representation of **knowledge-centric, fine-grained data** (formulas, instructional content, charts).
-> - Introduces a dedicated **knowledge data sub-pipeline**:
->   - *Natural knowledge images* from PDFs (textbooks, research papers): filtered by low-quality classifier, then annotated with a **3-level difficulty classifier** (easy/medium/hard); hard samples are down-sampled.
->   - *Synthetic formula images* generated from OCR + LaTeX source, with structural variation (layout, symbol density, resolution).
-> - Module-level upgrades: text-quality classifier for captions; combined semantic + low-level visual deduplication embeddings; stronger cross-modal embedding for retrieval.
->
-> **Key research question:** How does knowledge-centric data curation relate to the emergent capability of Seedream 4.0 in generating **LaTeX formulas, chemical equations, UI schematics, and charts**? Connect to the literature on data-centric AI and compositional generalization.
-
----
-
-### 4. POST-TRAINING: VLM Integration and Multimodal Joint Training
-
-**Prompt:**
-
-> Analyze the post-training evolution across the two versions.
->
-> **Seedream 3.0 post-training pipeline:**
-> - Stages: CT → SFT → RLHF → PE (no Refiner, since model can directly output 512²–2048²)
-> - **RLHF reward model scaling:** Switched from CLIP to VLM-based reward. Instructions formalized as queries; reward = normalized log-probability of "Yes" token from the VLM. This leverages generative reward modeling (GenRM) from LLM literature.
->   - Reward model scaled from 1B → >20B parameters, with emergent reward quality improvement confirming **reward model scaling laws**.
-> - **Aesthetic captions** in SFT: domain-specific captioners for aesthetics, style, layout — improving controllability.
->
-> **Seedream 4.0 post-training pipeline:**
-> - Stages: CT → SFT → RLHF → PE (same structure, but dramatically expanded scope)
-> - **Key innovation: Unified multimodal joint post-training** — T2I generation and image editing are trained *simultaneously* on the same DiT backbone. This is enabled by **causal diffusion design** in the DiT (likely inspired by causal masking in autoregressive models applied to the diffusion forward process).
->   - The CT stage emphasizes instruction-following for editing; SFT improves reference-target consistency.
->   - Three caption granularities per editing sample (reference image caption + target caption + edit instruction) act as **data augmentation**.
-> - **PE model (Prompt Engineering module):** An end-to-end **VLM fine-tuned from Seed1.5-VL** that performs: (1) task routing, (2) prompt rewriting with **auto-thinking (chain-of-thought)**, (3) optimal aspect ratio estimation, and (4) caption generation for reference and target images.
->   - Inspired by **AdaCoT**: dynamically adjusts thinking budget based on task complexity.
->   - This converts the system from a pure DiT into a **VLM → DiT** pipeline where the VLM handles all semantic preprocessing.
->
-> **Key research question:** What are the theoretical advantages of joint T2I + editing training vs. separate models? Connect to multi-task learning theory (gradient interference vs. positive transfer) and explain why Seedream 4.0 claims joint training surpasses models trained on individual tasks.
-
----
-
-### 5. INFERENCE ACCELERATION: From Consistent Noise Expectation to Adversarial Distillation
-
-**Prompt:**
-
-> This is the most technically complex evolution. Compare the two acceleration paradigms in mathematical depth.
->
-> **Seedream 3.0 acceleration (Hyper-SD + RayFlow inspired):**
-> - Introduces **instance-specific noise targets** rather than shared isotropic Gaussian priors → reduces trajectory collisions in probability space.
-> - **Consistent Noise Expectation:** A unified noise expectation vector $\bar{\boldsymbol{\epsilon}} = \mathbb{E}[\boldsymbol{\epsilon} | \text{pretrained model}]$ is estimated and used as a global reference, aligning denoising transitions across all timesteps.
->   - *Theoretical claim:* This design maximizes the log-probability of the forward-backward path $p(\mathbf{x}_0 \to \boldsymbol{\epsilon} \to \hat{\mathbf{x}}_0)$.
->   - Result: 4–8× speedup while preserving quality (~3s for 1K image without PE).
-> - **Importance-aware timestep sampling**: Selects a non-uniform subset of timesteps for few-step inference based on their information contribution.
->
-> **Seedream 4.0 acceleration (multi-stage adversarial framework):**
-> - **Stage 1 — Adversarial Distillation Post-training (ADP):** Uses a **hybrid discriminator** to provide stable initialization for few-step generation. Replaces fixed divergence metrics (e.g., KL, MMD) with learned adversarial objectives, circumventing mode collapse.
->   - Connects to **progressive distillation** (Salimans & Ho, 2022) and **consistency models** (Song et al., 2023), but uses an adversarial loss instead of consistency targets.
-> - **Stage 2 — Adversarial Distribution Matching (ADM):** Uses a **learnable diffusion-based discriminator** for fine-tuning. The discriminator itself is a diffusion model, enabling it to model complex multi-modal distributions — connecting to **diffusion-GAN** literature.
->   - Formally: $\min_\theta \max_\phi \mathcal{L}_{\rm adv}(\theta, \phi)$ where $\phi$ parameterizes a diffusion-based discriminator.
-> - **Quantization:** Adaptive 4/8-bit hybrid quantization with offline smoothing for outlier handling + search-based optimization per layer (connecting to GPTQ, SmoothQuant). Hardware-specific kernels co-designed with quantization for maximum throughput.
-> - **Speculative Decoding for PE (VLM):** Conditions draft model features on both (a) preceding feature sequence and (b) token sequence advanced by one timestep — resolving stochastic sampling ambiguity. Loss includes KV-cache auxiliary loss + cross-entropy on logits.
->
-> **Quantitative comparison:**
-> - Seedream 3.0: ~3.0s for 1K image (without PE)
-> - Seedream 4.0: ~1.4s for 2K image (without PE) — approximately **4× faster at 4× higher resolution**, implying ~**16× effective efficiency gain** (accounting for pixel count scaling).
->
-> **Key research question:** The adversarial framework in 4.0 avoids the trajectory-compression approach of 3.0. What are the theoretical tradeoffs? Under what conditions does adversarial distribution matching produce higher diversity than consistency-based distillation?
-
----
-
-### 6. BENCHMARK METHODOLOGY: Bench-377 vs. MagicBench 4.0 + DreamEval
-
-**Prompt:**
-
-> Compare how evaluation methodology evolved, reflecting the expanded task scope of 4.0.
->
-> **Seedream 3.0 evaluations:**
-> - **Bench-377**: 377 prompts across 5 scenarios (cinematic, arts, entertainment, aesthetic design, practical design). Metrics: text-image alignment, structural correction, aesthetic quality.
-> - **Text rendering**: 180 CN + 180 EN prompts. Metrics:
->   - Accuracy rate: $R_a = (1 - N_e/N) \times 100\%$ where $N_e$ = Levenshtein edit distance
->   - Hit rate: $R_h = N_c/N \times 100\%$ where $N_c$ = correctly rendered characters
->   - Availability rate: human perception-based acceptance rate
-> - Automatic: EvalMuse, HPSv2, MPS, Internal-Align, Internal-Aes (Seedream 3.0 achieves first place on all).
->
-> **Seedream 4.0 evaluations:**
-> - **MagicBench 4.0**: 725 total prompts — T2I (325), single-image editing (300), multi-image editing (100). Each provided in CN + EN. Adds dimensions: **dense text rendering** and **content understanding / in-context reasoning**.
-> - **DreamEval**: Fully automated benchmark, 128 sub-tasks, 1,600 prompts, across 4 generation scenarios. Uses VQA-style fine-grained scoring (visual question answering per prompt → interpretable, deterministic). Includes **tiered difficulty** (easy / medium / hard).
-> - Evaluation reveals interesting failure mode: Seedream 4.0 performs well on Easy/Medium but drops on Hard, especially single-image editing → identifies multi-modal understanding and reasoning as the bottleneck for future scaling.
->
-> **Key research question:** DreamEval's VQA-based scoring is more reproducible than human ELO battles. Discuss the bias-variance tradeoff: human evaluations capture holistic aesthetic preference but have high variance; VQA metrics have lower variance but may miss perceptual quality. How should future work combine both?
-
----
-
-### 7. MULTIMODAL UNIFICATION: The Paradigm Shift
-
-**Prompt:**
-
-> The most fundamental conceptual advance from 3.0 to 4.0 is the shift from a **pure text-to-image model** to a **unified multimodal generation system**. Explain this rigorously.
->
-> **Seedream 3.0:** A T2I model with a separate SeedEdit module for editing. Two separate pipelines.
->
-> **Seedream 4.0:** A single DiT backbone, post-trained jointly, supporting:
-> - T2I generation (text → image)
-> - Single-image editing (text + image → image)
-> - Multi-image composition (text + N images → image, N > 10)
-> - Multi-image output (text → multiple coherent images)
-> - Reference-based generation (style/ID/IP transfer)
-> - Visual-signal-controlled generation (Canny, sketch, depth, inpainting mask) — natively, without ControlNet
-> - In-context reasoning generation (implicit prompt expansion + real-world constraint inference)
->
-> **Formal framing:** Define the unified generation objective as:
-> $$p(\mathbf{y}_{1:M} | \mathbf{x}_{1:N}, \mathbf{c})$$
-> where:
-> - $\mathbf{x}_{1:N}$ = N reference images (N=0 for pure T2I)
-> - $\mathbf{c}$ = text condition (prompt + VLM-processed instructions)
-> - $\mathbf{y}_{1:M}$ = M output images (M=1 for standard, M>1 for storyboard/sequence)
->
-> Seedream 3.0 only handles N=0, M=1. Seedream 4.0 handles arbitrary N, M.
->
-> **Research question:** What architectural constraints enable a single DiT to learn this combinatorially larger conditional distribution without catastrophic forgetting across tasks? Connect to multi-task diffusion models, composer architectures, and attention-based conditioning.
-
----
-
-### 8. SUMMARY TABLE FOR RESEARCHERS
-
-**Prompt:**
-
-> Produce a concise technical comparison table for a NeurIPS paper appendix:
-
-| Dimension               | Seedream 3.0                                                | Seedream 4.0                                                          | Key Advance                                  |
-| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
-| **Backbone**            | MMDiT (fixed)                                               | New scalable DiT                                                      | >10× FLOP reduction                          |
-| **VAE**                 | Standard compression                                        | High-compression-ratio                                                | Fewer latent tokens → faster attention       |
-| **Training Objective**  | Flow matching + REPA (λ=0.5, DINOv2-L)                      | Flow matching (likely same) + adversarial distillation                | Distillation replaces trajectory compression |
-| **Data Strategy**       | Defect-aware + dual-axis TF-IDF sampling                    | Knowledge-centric curation + difficulty-rated sub-pipeline            | Enables formula/chart/UI generation          |
-| **Post-training Scope** | T2I only (CT→SFT→RLHF→PE)                                   | Joint T2I + editing + multi-image (CT→SFT→RLHF→PE)                    | Unified multimodal system                    |
-| **Reward Model**        | VLM-based, 1B→>20B (GenRM)                                  | VLM-based (continued scaling)                                         | Consistent scaling law confirmed             |
-| **PE Module**           | Rule-based prompt expansion                                 | End-to-end VLM (Seed1.5-VL) with AdaCoT thinking budget               | Semantic reasoning before generation         |
-| **Acceleration**        | Consistent noise expectation + importance timestep sampling | ADP → ADM (adversarial) + 4/8-bit quantization + speculative decoding | Holistic hardware-software co-design         |
-| **Inference Speed**     | ~3.0s @ 1K (no PE)                                          | ~1.4s @ 2K (no PE)                                                    | ~16× effective efficiency gain               |
-| **Max Resolution**      | 2K native                                                   | 4K native                                                             | Commercial-grade quality                     |
-| **Task Scope**          | T2I only                                                    | T2I + editing + multi-image (N→M)                                     | Paradigm shift                               |
-| **Evaluation**          | Bench-377 + text metrics                                    | MagicBench 4.0 + DreamEval (VQA-based)                                | Richer, more reproducible evaluation         |
-
----
-
-## FINAL SYNTHESIS PROMPT FOR NOTEBOOKLM
-
-> **"Synthesize all of the above into a 5-paragraph technical abstract, written as if for a NeurIPS workshop paper, that precisely characterizes what mathematical and systems-level innovations distinguish Seedream 4.0 from Seedream 3.0. Use equations where appropriate. Conclude with two open research questions raised by these advances."**
-
----
-
-*This prompt was designed for use with both Seedream technical reports loaded as NotebookLM sources. Run sub-prompts sequentially to build a layered technical understanding.*
+These advances collectively demonstrate that a single DiT, conditioned via structured token sequences, attention masking, and task embeddings, can learn the combinatorially large distribution $p(\mathbf{y}_{1:M} \mid \mathbf{x}_{1:N}, \mathbf{c})$ without architectural fragmentation or catastrophic forgetting — the representational burden absorbed by conditioning structure rather than parameter multiplication. Two open research questions follow directly. **First**, the structured attention mask $\mathbf{A}$ is currently hand-designed per task type: can $\mathbf{A}$ itself be learned end-to-end, perhaps via differentiable sparse attention (Correia et al., 2019) or latent graph structure inference, such that the model discovers optimal inter-image information routing without human-specified task taxonomy? A learned $\mathbf{A}$ would generalize to novel task types at inference time without retraining, but requires differentiating through a discrete combinatorial object. **Second**, the AdaCoT prompt expansion module allocates reasoning budget $B(\mathbf{c})$ proportional to prompt complexity, but the mapping complexity$(\mathbf{c})$ is itself a learned heuristic: what is the optimal *policy* for reasoning budget allocation in a joint image generation + VLM system, and does it correspond to an interpretable quantity such as conditional entropy $\mathcal{H}(\mathbf{y} \mid \mathbf{c})$ or the expected KL divergence between the unexpanded and expanded conditional distributions $\mathbb{E}[D_\text{KL}(p(\mathbf{y} \mid \hat{\mathbf{c}}) \| p(\mathbf{y} \mid \mathbf{c}_\text{raw}))]$? Answering this would ground adaptive reasoning allocation in information-theoretic foundations and potentially enable compute-optimal test-time scaling for generative vision models.
